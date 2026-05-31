@@ -18,17 +18,19 @@ import type { CareEvent, Elder, Role } from './types';
 import { useEffect, useMemo, useState } from 'react';
 
 const navItems = [
-  { path: '/', label: '首页', icon: Home },
-  { path: '/elders', label: '老人列表', icon: Users },
-  { path: '/record', label: '日常录入', icon: ClipboardList },
-  { path: '/events', label: '协同事件', icon: HeartPulse },
-  { path: '/assessments', label: '多角色评估', icon: Stethoscope },
-  { path: '/dependency', label: '依赖链路', icon: GitBranch },
+  { path: '/', label: '运营驾驶舱', icon: Home },
+  { path: '/elders', label: '长者档案', icon: Users },
+  { path: '/record', label: '现场记录', icon: ClipboardList },
+  { path: '/handover', label: '交班中心', icon: GitBranch },
+  { path: '/events', label: '异常事件', icon: HeartPulse },
+  { path: '/assessments', label: '角色协同', icon: Stethoscope },
+  { path: '/dependency', label: '责任链路', icon: GitBranch },
   { path: '/conflicts', label: '冲突检测', icon: AlertTriangle },
-  { path: '/decisions', label: '决策管理', icon: ClipboardCheck },
-  { path: '/plan', label: '照护方案', icon: ClipboardCheck },
+  { path: '/plan', label: '方案微修订', icon: ClipboardCheck },
+  { path: '/decisions', label: '决策台账', icon: ClipboardCheck },
+  { path: '/family', label: '家属摘要', icon: FileClock },
   { path: '/tasks', label: '任务中心', icon: Activity },
-  { path: '/approval', label: '人工确认', icon: ShieldCheck },
+  { path: '/approval', label: '审批证据链', icon: ShieldCheck },
   { path: '/audit', label: '审计日志', icon: FileClock },
 ];
 
@@ -159,6 +161,118 @@ const roleWorkflows: Record<Role, RoleWorkflow> = {
     boundaries: ['不代替医生确认医疗方案', '不绕过人工确认', '不向家属开放未经确认 AI 判断'],
   },
 };
+
+const cnRoleLabels: Record<Role, string> = {
+  doctor: '医生',
+  nurse: '护士',
+  caregiver: '护理员',
+  rehab: '康复师',
+  nutritionist: '营养师',
+  pharmacist: '药师',
+  socialWorker: '社工',
+  assessor: '评估师',
+  admin: '管理员',
+};
+
+const operationsMock = {
+  focusResidents: [
+    { elderId: 'e1', name: '张秀兰', room: '2F-218', risk: '中高', reason: '食量连续下降、夜醒增加、晨起扶墙', owner: '李护士', trend: '近 72 小时风险上升' },
+    { elderId: 'e2', name: '刘国强', room: '3F-306', risk: '中', reason: '康复完成度下降、午后疲劳', owner: '赵康复师', trend: '需继续观察 48 小时' },
+  ],
+  openLoops: [
+    { type: '逾期任务', title: '摄入记录缺 1 餐', owner: '王护理员', due: '今日 12:30', path: '/tasks' },
+    { type: '待审批建议', title: '康复训练 48 小时降级', owner: '陈医生', due: '今日 18:00', path: '/approval' },
+    { type: '异常事件', title: '连续性状态下滑未复盘', owner: '李护士', due: '明日 10:00', path: '/events' },
+  ],
+  familyAlerts: [
+    { elder: '张秀兰', family: '张先生', issue: '连续两次询问进食情况，需给出已确认说明', owner: '吴社工', status: '待回复' },
+    { elder: '何美珍', family: '何女士', issue: '希望调整视频沟通频率，需判断是否可排班', owner: '吴社工', status: '待评估' },
+  ],
+  workload: [
+    { name: '王护理员', role: '护理员', tasks: 9, overdue: 1, load: 86 },
+    { name: '李护士', role: '护士', tasks: 7, overdue: 0, load: 74 },
+    { name: '赵康复师', role: '康复师', tasks: 6, overdue: 1, load: 81 },
+    { name: '吴社工', role: '社工', tasks: 4, overdue: 0, load: 62 },
+  ],
+  shiftSummary: {
+    night: ['张秀兰 02:10 夜醒一次，起身扶墙，已提醒晨起保护', '刘国强 夜间无跌倒，血糖记录完整'],
+    day: ['补齐张秀兰早餐/午餐摄入比例', '康复师复评刘国强午后训练耐受', '社工准备张秀兰家属说明草稿'],
+    watch: ['张秀兰：食量、睡眠、步态', '何美珍：咳嗽和皮肤受压点'],
+  },
+};
+
+const cellsProfileMock = {
+  health: [
+    { title: '跌倒风险', value: '中高', evidence: '夜醒增加、晨起扶墙、步态不稳', confirmed: true },
+    { title: '营养风险', value: '中', evidence: '两日早餐少于半份，午餐剩余较多', confirmed: false },
+    { title: '用药观察', value: '需复核', evidence: '白天嗜睡与食欲下降同步出现', confirmed: false },
+  ],
+  behavior: [
+    { title: '沟通方式', value: '温和解释，避免命令式提醒', evidence: '护理员交班备注 3 次提及', confirmed: true },
+    { title: '活动规律', value: '上午配合度更高，下午容易疲劳', evidence: '康复完成记录连续两周显示', confirmed: true },
+  ],
+  emotion: [
+    { title: '情绪触发', value: '家属探访减少后沉默少语', evidence: '家属沟通与护理备注交叉出现', confirmed: false },
+  ],
+  preferences: [
+    { type: '硬性安全约束', title: '晨起先坐稳再站立', detail: '跌倒风险相关，不作为可选偏好', status: '已进入照护计划' },
+    { type: '标准照护模板', title: '二级护理夜间巡视', detail: '按机构 SOP 执行', status: '执行中' },
+    { type: '可执行个性化偏好', title: '上午洗澡更配合', detail: '需避开早餐后一小时和护理高峰', status: '待主管确认' },
+    { type: '人性化细节', title: '喜欢被称呼“张阿姨”', detail: '新人交接提醒，不单独派任务', status: '已确认' },
+  ],
+};
+
+const microRevisionSuggestions = [
+  {
+    id: 'adj1',
+    title: '将康复训练临时调整为短时多次',
+    original: '每日一次走廊训练 30 分钟',
+    revised: '未来 48 小时改为保护下坐站转换和平衡训练，每次不超过 15 分钟',
+    reason: '连续两次训练提前中止，夜间睡眠不足且晨起步态不稳',
+    evidence: ['5月14日 康复训练提前终止', '5月15日 护理员记录晨起扶墙', '夜醒次数从 2 次升至 5 次'],
+    workload: '减少单次训练强度，但增加复评记录 1 次',
+    risk: '高',
+    confidence: 82,
+    approver: '医生',
+    executor: '康复师',
+    status: '待确认',
+  },
+  {
+    id: 'adj2',
+    title: '增加三日摄入观察与低糖高蛋白点心',
+    original: '按二级护理常规饮食记录',
+    revised: '连续三天记录每餐摄入比例，午后增加低糖高蛋白点心',
+    reason: '早餐摄入连续下降，短期营养风险上升',
+    evidence: ['5月13日 早餐少于半份', '5月14日 早餐约三分之一', '营养师评估建议少量多餐'],
+    workload: '护理员每餐增加 10 秒记录，营养师复盘 1 次',
+    risk: '中',
+    confidence: 84,
+    approver: '护理主管',
+    executor: '护理员/营养师',
+    status: '待确认',
+  },
+];
+
+const handoverMock = {
+  overview: { completed: 42, pending: 7, events: 3, watchResidents: 5 },
+  keyResidents: [
+    { name: '张秀兰', room: '2F-218', reason: '食量下降 + 夜醒 + 步态不稳', next: '白班补齐摄入记录，护士复测体征' },
+    { name: '刘国强', room: '3F-306', reason: '午后训练耐受下降', next: '康复师改为短时训练并记录完成度' },
+  ],
+  unfinished: [
+    { title: '张秀兰午餐摄入记录', owner: '王护理员', due: '12:30', reason: '餐厅协助临时调班' },
+    { title: '康复训练降级确认', owner: '陈医生', due: '18:00', reason: '等待体征复测结果' },
+  ],
+  family: [
+    { elder: '张秀兰', issue: '家属询问进食下降原因', next: '社工使用已确认信息回复' },
+    { elder: '何美珍', issue: '家属希望增加视频频率', next: '评估排班可行性' },
+  ],
+};
+
+const familyWeeklyMock = [
+  { elder: '张秀兰', summary: '本周重点关注进食、睡眠和步态安全，已增加晨起保护和摄入观察。', evidence: '护理记录 6 条、任务反馈 2 条、护士确认 1 次', status: '待社工确认' },
+  { elder: '刘国强', summary: '康复训练根据疲劳情况做短时调整，整体配合度稳定。', evidence: '康复记录 4 条、护理交班 2 条', status: '可发送草稿' },
+];
 
 function useHashRoute() {
   const [path, setPath] = useState(window.location.hash.replace('#', '') || '/');
@@ -357,21 +471,109 @@ function Layout({ path, navigate, children }: { path: string; navigate: (path: s
 function Dashboard({ navigate }: { navigate: (path: string) => void }) {
   const { elders, events, tasks, conflicts } = useApp();
   const openEvents = events.filter((item) => item.status !== 'closed');
-  const activeEvent = openEvents[0];
+  const pendingApprovals = microRevisionSuggestions.filter((item) => item.status === '待确认').length;
+  const overdueTasks = operationsMock.openLoops.filter((item) => item.type === '逾期任务').length;
   return (
     <>
       <AiNotice />
-      <MyNextStep navigate={navigate} />
-      <ProcessBoard navigate={navigate} />
-      <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="在住老人" value={elders.length} sub="Elder Cells 持续观察" />
-        <Metric label="开放事件" value={openEvents.length} sub="跨专业协同处理中" />
-        <Metric label="待办任务" value={tasks.filter((item) => item.status !== 'done').length} sub="按角色自动分派" />
-        <Metric label="待协调冲突" value={conflicts.filter((item) => !item.resolved).length} sub="进入统一方案前处理" />
+      <Panel title="今日运营驾驶舱">
+        <div className="grid gap-4 md:grid-cols-5">
+          <Metric label="重点长者" value={operationsMock.focusResidents.length} sub="今日需持续观察" />
+          <Metric label="未闭环事项" value={operationsMock.openLoops.length} sub="任务/事件/审批" />
+          <Metric label="逾期任务" value={overdueTasks} sub="需要主管介入" />
+          <Metric label="待确认建议" value={pendingApprovals} sub="AI 建议不自动生效" />
+          <Metric label="开放事件" value={openEvents.length} sub="事件卡片驱动协同" />
+        </div>
+        <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <WorkZone kind="human" title="护理主管今天先看什么" subtitle="按未闭环风险、责任人和证据排序，而不是只看静态数字。">
+            <div className="grid gap-3">
+              {operationsMock.focusResidents.map((item) => (
+                <button key={item.elderId} onClick={() => navigate(`/elder/${item.elderId}`)} className="rounded-lg border border-slate-200 bg-white p-4 text-left hover:border-care">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Pill className={item.risk === '中高' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>{item.risk}</Pill>
+                    <span className="font-semibold text-ink">{item.name} · {item.room}</span>
+                    <span className="text-xs text-muted">责任人：{item.owner}</span>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{item.reason}</p>
+                  <div className="mt-2 text-xs text-care">{item.trend}</div>
+                </button>
+              ))}
+            </div>
+          </WorkZone>
+          <WorkZone kind="ai" title="Cells 建议队列" subtitle="AI 只做观察、提醒和微修订建议，默认进入待确认。">
+            <div className="space-y-3">
+              {microRevisionSuggestions.map((item) => (
+                <button key={item.id} onClick={() => navigate('/plan')} className="block w-full rounded-lg border border-blue-100 bg-white p-3 text-left hover:border-blue-300">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-ink">{item.title}</div>
+                    <Pill className="border-amber-200 bg-amber-50 text-amber-700">{item.status}</Pill>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600">风险 {item.risk} · 置信度 {item.confidence}% · 审批人：{item.approver}</div>
+                </button>
+              ))}
+            </div>
+          </WorkZone>
+        </div>
+      </Panel>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <Panel title="未闭环事项">
+          <div className="grid gap-3">
+            {operationsMock.openLoops.map((item) => (
+              <button key={`${item.type}-${item.title}`} onClick={() => navigate(item.path)} className="rounded-lg border border-slate-200 bg-white p-4 text-left hover:border-care">
+                <div className="flex items-center justify-between">
+                  <Pill className="border-slate-200 bg-slate-50 text-slate-700">{item.type}</Pill>
+                  <span className="text-xs text-muted">{item.due}</span>
+                </div>
+                <div className="mt-2 font-semibold text-ink">{item.title}</div>
+                <div className="mt-1 text-sm text-muted">责任人：{item.owner}</div>
+              </button>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="交班摘要">
+          <div className="grid gap-3 md:grid-cols-3">
+            <ShiftSummaryBlock title="夜班遗留" items={operationsMock.shiftSummary.night} />
+            <ShiftSummaryBlock title="白班跟进" items={operationsMock.shiftSummary.day} />
+            <ShiftSummaryBlock title="重点观察" items={operationsMock.shiftSummary.watch} />
+          </div>
+          <button className="mt-4 rounded-md border border-care px-3 py-2 text-sm font-medium text-care" onClick={() => navigate('/handover')}>进入交班中心</button>
+        </Panel>
       </div>
-      {activeEvent && <ActiveEventWorkspace event={activeEvent} navigate={navigate} />}
-      <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
-        <Panel title="开放协同事件">
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <Panel title="家属沟通提醒">
+          <div className="space-y-3">
+            {operationsMock.familyAlerts.map((item) => (
+              <button key={`${item.elder}-${item.issue}`} onClick={() => navigate('/family')} className="block w-full rounded-lg border border-slate-200 bg-white p-4 text-left hover:border-care">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-ink">{item.elder} · {item.family}</div>
+                  <Pill className="border-amber-200 bg-amber-50 text-amber-700">{item.status}</Pill>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{item.issue}</p>
+                <div className="mt-1 text-xs text-muted">责任人：{item.owner}</div>
+              </button>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="班组负荷">
+          <div className="space-y-3">
+            {operationsMock.workload.map((item) => (
+              <div key={item.name} className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-ink">{item.name} · {item.role}</div>
+                  <div className="text-sm text-muted">{item.tasks} 项任务 / {item.overdue} 项超时</div>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-slate-200">
+                  <div className={`h-2 rounded-full ${item.load > 80 ? 'bg-amber-500' : 'bg-care'}`} style={{ width: `${item.load}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <Panel title="异常事件卡片">
           <div className="space-y-4">
             {openEvents.map((event) => (
               <button key={event.id} className="block w-full text-left" onClick={() => navigate(`/event/${event.id}`)}>
@@ -380,7 +582,7 @@ function Dashboard({ navigate }: { navigate: (path: string) => void }) {
             ))}
           </div>
         </Panel>
-        <Panel title="Elder Cells 风险概览">
+        <Panel title="长者 Cells 风险趋势">
           <div className="space-y-4">
             {elders.map((elder) => (
               <ElderCellBars key={elder.id} elder={elder} compact />
@@ -508,6 +710,105 @@ function ActiveEventWorkspace({ event, navigate }: { event: CareEvent; navigate:
   );
 }
 
+function ShiftSummaryBlock({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="font-semibold text-ink">{title}</div>
+      <div className="mt-3 space-y-2">
+        {items.map((item) => (
+          <div key={item} className="rounded-md bg-slate-50 p-2 text-sm leading-6 text-slate-700">{item}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CellsProfileGroup({ title, items }: { title: string; items: { title: string; value: string; evidence: string; confirmed: boolean }[] }) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-4">
+      <div className="font-semibold text-ink">{title}</div>
+      <div className="mt-3 space-y-3">
+        {items.map((item) => (
+          <div key={`${title}-${item.title}`} className="rounded-md bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-medium text-ink">{item.title}：{item.value}</div>
+              <Pill className={item.confirmed ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>
+                {item.confirmed ? '已确认' : '待确认'}
+              </Pill>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-muted">证据：{item.evidence}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PreferenceCard({ item }: { item: { type: string; title: string; detail: string; status: string } }) {
+  const tone =
+    item.type === '硬性安全约束'
+      ? 'border-red-200 bg-red-50 text-red-700'
+      : item.type === '可执行个性化偏好'
+        ? 'border-teal-200 bg-teal-50 text-care'
+        : 'border-slate-200 bg-slate-50 text-slate-700';
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Pill className={tone}>{item.type}</Pill>
+        <Pill className="border-slate-200 bg-white text-slate-600">{item.status}</Pill>
+      </div>
+      <div className="mt-2 font-semibold text-ink">{item.title}</div>
+      <p className="mt-1 text-sm leading-6 text-slate-600">{item.detail}</p>
+    </div>
+  );
+}
+
+function SuggestionMiniCard({ item }: { item: (typeof microRevisionSuggestions)[number] }) {
+  return (
+    <div className="rounded-lg border border-blue-100 bg-white p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-semibold text-ink">{item.title}</div>
+        <Pill className="border-amber-200 bg-amber-50 text-amber-700">{item.status}</Pill>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{item.reason}</p>
+      <div className="mt-2 text-xs text-muted">审批人：{item.approver} · 执行人：{item.executor} · 置信度 {item.confidence}%</div>
+    </div>
+  );
+}
+
+function MicroRevisionCard({ item }: { item: (typeof microRevisionSuggestions)[number] }) {
+  return (
+    <div className="rounded-lg border border-blue-100 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold text-ink">{item.title}</h3>
+        <Pill className="border-amber-200 bg-amber-50 text-amber-700">{item.status}</Pill>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="rounded-md bg-slate-50 p-3">
+          <div className="text-xs text-muted">原方案</div>
+          <div className="mt-1 text-sm text-slate-700">{item.original}</div>
+        </div>
+        <div className="rounded-md bg-teal-50 p-3">
+          <div className="text-xs text-care">建议调整后</div>
+          <div className="mt-1 text-sm text-slate-700">{item.revised}</div>
+        </div>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-slate-700">触发原因：{item.reason}</p>
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        <Info label="风险级别" value={item.risk} />
+        <Info label="置信度" value={`${item.confidence}%`} />
+        <Info label="工作量影响" value={item.workload} />
+      </div>
+      <div className="mt-3 text-xs text-muted">证据：{item.evidence.join('；')}</div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button className="rounded-md bg-care px-3 py-2 text-sm font-medium text-white">采纳</button>
+        <button className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">修改后采纳</button>
+        <button className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">驳回</button>
+      </div>
+    </div>
+  );
+}
+
 function Metric({ label, value, sub }: { label: string; value: number; sub: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -555,32 +856,85 @@ function ElderList({ navigate }: { navigate: (path: string) => void }) {
 }
 
 function ElderDetail({ elderId }: { elderId: string }) {
-  const { elders, records, events } = useApp();
+  const { elders, records, events, carePlans } = useApp();
   const elder = elders.find((item) => item.id === elderId) ?? elders[0];
   const elderRecords = records.filter((item) => item.elderId === elder.id);
   const elderEvents = events.filter((item) => item.elderId === elder.id);
+  const currentPlan = carePlans.find((plan) => elderEvents.some((event) => event.id === plan.eventId));
   return (
     <div className="space-y-5">
-      <Panel title={`${elder.name} · ${elder.room}`}>
-        <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+      <Panel title={`${elder.name} · 长者 Cells 档案`}>
+        <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
           <div>
-            <div className="text-sm text-muted">诊断</div>
-            <div className="mt-2 flex flex-wrap gap-2">{elder.diagnoses.map((d) => <Pill key={d} className="border-slate-200 bg-slate-50 text-slate-700">{d}</Pill>)}</div>
-            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+            <div className="text-sm text-muted">基础信息</div>
+            <div className="mt-2 grid grid-cols-2 gap-3 text-sm">
+              <Info label="房间" value={elder.room} />
               <Info label="年龄" value={`${elder.age} 岁`} />
-              <Info label="护理等级" value={elder.careLevel} />
+              <Info label="照护等级" value={elder.careLevel} />
               <Info label="责任护士" value={elder.primaryNurse} />
-              <Info label="当前状态" value={elder.status} />
             </div>
+            <div className="mt-4 text-sm text-muted">主要诊断/风险标签</div>
+            <div className="mt-2 flex flex-wrap gap-2">{elder.diagnoses.map((d) => <Pill key={d} className="border-slate-200 bg-slate-50 text-slate-700">{d}</Pill>)}</div>
           </div>
           <ElderCellBars elder={elder} />
         </div>
       </Panel>
+
+      <Panel title="当前状态摘要">
+        <div className="grid gap-3 md:grid-cols-4">
+          {['饮食：连续下降', '睡眠：夜醒增加', '活动：晨起扶墙', '家属沟通：待回复'].map((item) => (
+            <div key={item} className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-medium text-ink">{item}</div>
+          ))}
+        </div>
+      </Panel>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <Panel title="Cells 画像">
+          <div className="grid gap-4 md:grid-cols-2">
+            <CellsProfileGroup title="健康 Cells" items={cellsProfileMock.health} />
+            <CellsProfileGroup title="行为 Cells" items={cellsProfileMock.behavior} />
+            <CellsProfileGroup title="情绪 Cells" items={cellsProfileMock.emotion} />
+            <div className="rounded-lg border border-slate-200 p-4">
+              <div className="font-semibold text-ink">证据链规则</div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">每条画像都必须能追溯到护理记录、任务反馈、异常事件或家属沟通，AI 只负责归并和提示，不能自动生效。</p>
+            </div>
+          </div>
+        </Panel>
+        <Panel title="偏好卡与个性化任务">
+          <div className="space-y-3">
+            {cellsProfileMock.preferences.map((item) => (
+              <PreferenceCard key={`${item.type}-${item.title}`} item={item} />
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel title="当前照护方案与微修订建议">
+        <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+          <WorkZone kind="context" title="标准照护模板 + 当前方案" subtitle="来自照护等级和机构 SOP，个体调整必须经过审批。">
+            <div className="space-y-2">
+              {(currentPlan?.items ?? []).map((item) => (
+                <div key={item.id} className="rounded-md bg-white p-3">
+                  <Pill className={roleTone[item.role]}>{cnRoleLabels[item.role]}</Pill>
+                  <div className="mt-2 font-medium text-ink">{item.title}</div>
+                  <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+          </WorkZone>
+          <WorkZone kind="ai" title="AI 微修订建议" subtitle="建议带证据、置信度、工作量和审批人，默认待确认。">
+            <div className="space-y-3">
+              {microRevisionSuggestions.map((item) => <SuggestionMiniCard key={item.id} item={item} />)}
+            </div>
+          </WorkZone>
+        </div>
+      </Panel>
+
       <div className="grid gap-5 lg:grid-cols-2">
-        <Panel title="最近日常记录">
+        <Panel title="Cells 观察时间线">
           <RecordTimeline records={elderRecords} />
         </Panel>
-        <Panel title="相关协同事件">
+        <Panel title="异常事件历史">
           <div className="space-y-3">{elderEvents.map((event) => <EventRow key={event.id} event={event} />)}</div>
         </Panel>
       </div>
@@ -591,38 +945,67 @@ function ElderDetail({ elderId }: { elderId: string }) {
 function DailyRecordPage() {
   const { elders, addRecord, can } = useApp();
   const [elderId, setElderId] = useState(elders[0]?.id ?? '');
-  const [flags, setFlags] = useState<string[]>(['食欲下降', '睡眠中断']);
-  const [note, setNote] = useState('今日早餐不足半份，夜间醒来多次，晨起步态不稳。');
+  const [recordType, setRecordType] = useState('饮食');
+  const [flags, setFlags] = useState<string[]>(['食欲下降', '需要护士查看']);
+  const [note, setNote] = useState('早餐只吃了三分之一，起身时扶墙，已协助坐稳。');
+  const [voiceNote, setVoiceNote] = useState('语音备注占位：长按后说出现场情况，系统自动转结构化记录。');
   const toggle = (flag: string) => setFlags((prev) => (prev.includes(flag) ? prev.filter((item) => item !== flag) : [...prev, flag]));
   return (
-    <Panel title="日常记录录入">
-      <div className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="space-y-4">
-          <label className="block text-sm font-medium text-ink">老人</label>
-          <select className="focus-ring w-full rounded-md border border-slate-200 bg-white px-3 py-2" value={elderId} onChange={(e) => setElderId(e.target.value)}>
-            {elders.map((elder) => <option key={elder.id} value={elder.id}>{elder.name} · {elder.room}</option>)}
-          </select>
-          <div>
-            <div className="mb-2 text-sm font-medium text-ink">异常标记</div>
-            <div className="grid grid-cols-2 gap-2">
-              {['食欲下降', '睡眠中断', '跌倒风险', '康复耐受下降', '情绪低落', '用药疑问'].map((flag) => (
-                <button key={flag} className={`rounded-md border px-3 py-2 text-sm ${flags.includes(flag) ? 'border-care bg-teal-50 text-care' : 'border-slate-200 bg-white text-slate-600'}`} onClick={() => toggle(flag)}>
-                  {flag}
-                </button>
-              ))}
+    <Panel title="护理员低摩擦现场记录">
+      <AiNotice />
+      <div className="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <WorkZone kind="human" title="30 秒完成现场记录" subtitle="少量结构化字段 + 快捷标签 + 语音/拍照占位，避免为系统增加额外填报负担。">
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="block text-sm font-medium text-ink">
+                长者
+                <select className="focus-ring mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2" value={elderId} onChange={(e) => setElderId(e.target.value)}>
+                  {elders.map((elder) => <option key={elder.id} value={elder.id}>{elder.name} · {elder.room}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-ink">
+                记录类型
+                <select className="focus-ring mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2" value={recordType} onChange={(e) => setRecordType(e.target.value)}>
+                  {['饮食', '睡眠', '排便', '情绪', '活动', '用药执行', '异常上报', '家属诉求'].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+            </div>
+            <div>
+              <div className="mb-2 text-sm font-medium text-ink">快捷标记</div>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                {['正常完成', '食欲下降', '夜醒增加', '步态不稳', '情绪低落', '拒绝护理', '家属询问', '需要护士查看', '加入交班'].map((flag) => (
+                  <button key={flag} className={`rounded-md border px-3 py-2 text-sm ${flags.includes(flag) ? 'border-care bg-teal-50 text-care' : 'border-slate-200 bg-white text-slate-600'}`} onClick={() => toggle(flag)}>
+                    {flag}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <textarea className="focus-ring h-24 w-full rounded-md border border-slate-200 px-3 py-2" value={note} onChange={(e) => setNote(e.target.value)} />
+            <div className="grid gap-3 md:grid-cols-2">
+              <button className="rounded-md border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-700" onClick={() => setVoiceNote('已模拟语音转写：老人早餐少量，起身扶墙，需要护士查看。')}>语音备注</button>
+              <button className="rounded-md border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-700">拍照凭证</button>
+            </div>
+            <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">{voiceNote}</div>
+            <button
+              disabled={!can('record:create')}
+              className="rounded-md bg-care px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              onClick={() => addRecord({ elderId, appetite: recordType === '饮食' ? '较昨日下降' : '未记录', sleep: flags.includes('夜醒增加') ? '夜醒增加' : '未记录', mobility: flags.includes('步态不稳') ? '步态不稳' : '未记录', mood: flags.includes('情绪低落') ? '沉默少语' : '平稳', vitals: '待护士复核', note, abnormalFlags: flags.filter((item) => item !== '正常完成') })}
+            >
+              提交并自动结构化
+            </button>
+            {!can('record:create') && <p className="text-sm text-amber-700">当前角色无现场记录录入权限。</p>}
+          </div>
+        </WorkZone>
+        <WorkZone kind="ai" title="Cells 结构化结果预览" subtitle="AI 把现场碎片整理成事件线索，但不会自动做医疗判断。">
+          <div className="space-y-3">
+            <Info label="观察类型" value={recordType} />
+            <Info label="异常标签" value={flags.join('、') || '无'} />
+            <Info label="可能流向" value={flags.includes('加入交班') ? '交班中心' : flags.includes('需要护士查看') ? '护士复核' : '仅记录'} />
+            <div className="rounded-md border border-blue-100 bg-white p-3 text-sm leading-6 text-slate-700">
+              若连续两天出现食欲下降、夜醒增加或步态不稳，系统将建议创建异常事件卡片，并带上原始记录作为证据。
             </div>
           </div>
-          <textarea className="focus-ring h-28 w-full rounded-md border border-slate-200 px-3 py-2" value={note} onChange={(e) => setNote(e.target.value)} />
-          <button
-            disabled={!can('record:create')}
-            className="rounded-md bg-care px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-            onClick={() => addRecord({ elderId, appetite: '少于半份', sleep: '夜醒多次', mobility: '步态不稳', mood: '偏低落', vitals: '待护士复测', note, abnormalFlags: flags })}
-          >
-            提交观察记录
-          </button>
-          {!can('record:create') && <p className="text-sm text-amber-700">当前角色无日常记录录入权限。</p>}
-        </div>
-        <AiNotice />
+        </WorkZone>
       </div>
     </Panel>
   );
@@ -1138,104 +1521,61 @@ function CarePlanPage() {
   const event = events.find((item) => item.id === plan.eventId);
   const elder = elders.find((item) => item.id === event?.elderId);
   const role = currentUser?.role ?? 'caregiver';
-  const workflow = roleWorkflows[role];
   const myItems = plan.items.filter((item) => item.role === role);
-  const approvalItems = plan.items.filter((item) => item.requiresApproval && item.approvalStatus === 'pending');
-  const myApprovalItems = ['doctor', 'pharmacist', 'rehab'].includes(role) ? approvalItems : [];
   const allApproved = plan.items.every((item) => !item.requiresApproval || item.approvalStatus === 'approved');
-  const nextHandoff = workflow.downstream[0];
-  const needsConfirmBeforeAction = myItems.some((item) => item.requiresApproval && item.approvalStatus !== 'approved');
-  const canConfirmPlan = allApproved && !plan.confirmed && can('plan:confirm');
   return (
     <div className="space-y-5">
-      <Panel title={`${roleLabels[role]}照护方案工作单`}>
+      <Panel title="照护方案编辑与微修订建议">
         <AiNotice />
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-care">当前发生了什么</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-care">基于现有照护等级模板做小范围调整</div>
               <h3 className="mt-1 text-lg font-semibold text-ink">{event?.title ?? plan.goal}</h3>
               <p className="mt-2 text-sm leading-6 text-slate-700">
-                {elder?.name ? `${elder.name} · ${elder.room}：` : ''}{plan.summary}
+                {elder?.name ? `${elder.name} · ${elder.room}：` : ''}Cells 不直接替代照护方案，只在标准模板基础上提出可审批、可执行、可复盘的微修订。
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Pill className={roleTone[role]}>{roleLabels[role]}</Pill>
-              <Pill className={plan.confirmed ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>
-                {plan.confirmed ? '方案已生成任务' : '方案待闭环确认'}
-              </Pill>
+              <Pill className={roleTone[role]}>{cnRoleLabels[role]}视角</Pill>
+              <Pill className="border-amber-200 bg-amber-50 text-amber-700">AI 建议默认待确认</Pill>
             </div>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 xl:grid-cols-4">
-          <WorkZone kind="context" title="1. 我需要知道什么" subtitle="只显示当前角色执行前必须理解的上下文。">
-            <div className="space-y-2 text-sm text-slate-700">
-              <div className="rounded-md bg-white p-3">阶段目标：{plan.goal}</div>
-              <div className="rounded-md bg-white p-3">我的职责：{workflow.scopeTitle}</div>
-              {workflow.upstream.length > 0 ? workflow.upstream.map((item) => (
-                <div key={`${item.role}-${item.input}`} className="rounded-md bg-white p-3">
-                  需要来自 {roleLabels[item.role]}：{item.input}
-                </div>
-              )) : <div className="rounded-md bg-white p-3">当前角色无需等待上游输入。</div>}
-            </div>
-          </WorkZone>
-
-          <WorkZone kind="ai" title="2. 角色 AI 给我的方案" subtitle="AI 按我的角色抽取出的方案内容，只读参考。">
+        <div className="mt-5 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <WorkZone kind="context" title="原照护方案" subtitle="来自照护等级模板和当前事件方案，作为微修订的基线。">
             <div className="space-y-3">
-              {myItems.length > 0 ? myItems.map((item) => (
-                <div key={item.id} className="rounded-md bg-white p-3">
-                  <div className="font-semibold text-ink">{item.title}</div>
+              {plan.items.map((item) => (
+                <div key={item.id} className={`rounded-md border p-3 ${item.role === role ? 'border-care bg-teal-50' : 'border-slate-200 bg-white'}`}>
+                  <div className="flex items-center justify-between">
+                    <Pill className={roleTone[item.role]}>{cnRoleLabels[item.role]}</Pill>
+                    <Pill className={item.requiresApproval ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}>{item.requiresApproval ? item.approvalStatus : '可执行'}</Pill>
+                  </div>
+                  <div className="mt-2 font-semibold text-ink">{item.title}</div>
                   <p className="mt-1 text-sm leading-6 text-slate-600">{item.detail}</p>
-                  <Pill className={item.requiresApproval ? 'mt-2 border-amber-200 bg-amber-50 text-amber-700' : 'mt-2 border-emerald-200 bg-emerald-50 text-emerald-700'}>
-                    {item.requiresApproval ? `需人工确认：${item.approvalStatus}` : '可进入执行'}
-                  </Pill>
                 </div>
-              )) : <div className="rounded-md bg-white p-3 text-sm text-slate-600">当前角色没有直接方案动作，只需查看上下游状态。</div>}
+              ))}
             </div>
           </WorkZone>
 
-          <WorkZone kind="human" title="3. 我现在要做什么" subtitle="这是当前用户本人需要处理的动作。">
+          <WorkZone kind="ai" title="Cells 微修订建议队列" subtitle="每条建议必须带证据、风险、工作量、审批人和执行人，不能自动生效。">
             <div className="space-y-3">
-              {needsConfirmBeforeAction && <div className="rounded-md border border-amber-200 bg-white p-3 text-sm text-amber-800">等待人工确认后再执行，不要提前下发或执行。</div>}
-              {myApprovalItems.length > 0 && <a href="#/approval" className="block rounded-md border border-teal-200 bg-white p-3 text-sm font-medium text-care">去人工确认页处理 {myApprovalItems.length} 个待确认项</a>}
-              {myItems.length > 0 && !needsConfirmBeforeAction && <a href="#/tasks" className="block rounded-md border border-teal-200 bg-white p-3 text-sm font-medium text-care">进入任务中心执行我的任务</a>}
-              {canConfirmPlan && <button className="rounded-md bg-care px-3 py-2 text-sm font-medium text-white" onClick={() => confirmPlan(plan.id)}>确认方案并生成任务</button>}
-              {myItems.length === 0 && myApprovalItems.length === 0 && !canConfirmPlan && <div className="rounded-md bg-white p-3 text-sm text-slate-600">当前暂无我本人要处理的方案动作。</div>}
-            </div>
-          </WorkZone>
-
-          <WorkZone kind="human" title="4. 做完交给谁" subtitle="完成后系统会进入下游角色或任务闭环。">
-            <div className="space-y-3 text-sm text-slate-700">
-              {nextHandoff ? (
-                <div className="rounded-md bg-white p-3">
-                  <Pill className={roleTone[nextHandoff.role]}>{roleLabels[nextHandoff.role]}</Pill>
-                  <p className="mt-2 leading-6">{nextHandoff.handoff}</p>
-                </div>
-              ) : (
-                <div className="rounded-md bg-white p-3">完成后进入事件复盘，并更新 Elder Cells。</div>
-              )}
-              <div className="rounded-md bg-white p-3">提交后会进入审计日志，供复盘和关闭事件使用。</div>
+              {microRevisionSuggestions.map((item) => <MicroRevisionCard key={item.id} item={item} />)}
             </div>
           </WorkZone>
         </div>
       </Panel>
 
-      <Panel title="全局统一方案，只读上下文">
-        <WorkZone kind="context" title="所有角色方案总览" subtitle="这是为了理解整体协同，不代表当前角色要处理全部内容。">
-          <div className="grid gap-3">
-            {plan.items.map((item) => (
-              <div key={item.id} className={`flex items-start justify-between gap-4 rounded-lg border p-4 ${item.role === role ? 'border-care bg-teal-50/50' : 'border-slate-200 bg-white'}`}>
-                <div>
-                  <Pill className={roleTone[item.role]}>{roleLabels[item.role]}{item.role === role ? ' · 我' : ''}</Pill>
-                  <h4 className="mt-2 font-semibold text-ink">{item.title}</h4>
-                  <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
-                </div>
-                <Pill className={item.approvalStatus === 'approved' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : item.approvalStatus === 'rejected' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>
-                  {item.requiresApproval ? `需确认 · ${item.approvalStatus}` : '无需审批'}
-                </Pill>
-              </div>
-            ))}
+      <Panel title={`${cnRoleLabels[role]}闭环动作`}>
+        <WorkZone kind="human" title="我现在需要做什么" subtitle="只显示当前角色相关的方案动作；管理者可以在审批页查看全局。">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-md bg-white p-3">
+              <div className="text-xs text-muted">我的方案项</div>
+              <div className="mt-1 text-lg font-semibold text-ink">{myItems.length}</div>
+            </div>
+            <a href="#/approval" className="rounded-md border border-teal-200 bg-white p-3 text-sm font-medium text-care">查看待审批建议</a>
+            <button className="rounded-md bg-care px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300" disabled={!allApproved || plan.confirmed || !can('plan:confirm')} onClick={() => confirmPlan(plan.id)}>确认方案并生成任务</button>
           </div>
         </WorkZone>
       </Panel>
@@ -1339,6 +1679,96 @@ function DecisionManagementPage() {
         </div>
       </Panel>
     </div>
+  );
+}
+
+function HandoverCenterPage() {
+  const [manualNote, setManualNote] = useState('夜班补充：张秀兰凌晨起身时情绪紧张，建议白班先安抚再测量体征。');
+  return (
+    <div className="space-y-5">
+      <Panel title="交班中心">
+        <AiNotice />
+        <div className="mt-5 grid gap-4 md:grid-cols-4">
+          <Metric label="完成任务" value={handoverMock.overview.completed} sub="本班已闭环" />
+          <Metric label="未完成任务" value={handoverMock.overview.pending} sub="需下一班跟进" />
+          <Metric label="异常事件" value={handoverMock.overview.events} sub="仍在处理中" />
+          <Metric label="重点观察" value={handoverMock.overview.watchResidents} sub="带入下一班" />
+        </div>
+        <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <WorkZone kind="ai" title="AI 自动交班摘要" subtitle="从护理记录、任务、异常事件、家属沟通中生成，必须带来源，交班人确认后生效。">
+            <div className="grid gap-3 md:grid-cols-3">
+              <ShiftSummaryBlock title="夜班遗留" items={operationsMock.shiftSummary.night} />
+              <ShiftSummaryBlock title="白班需跟进" items={operationsMock.shiftSummary.day} />
+              <ShiftSummaryBlock title="重点观察" items={operationsMock.shiftSummary.watch} />
+            </div>
+            <div className="mt-3 rounded-md bg-white p-3 text-xs text-muted">来源：护理记录 8 条、任务反馈 5 条、异常事件 1 条、家属沟通 2 条。</div>
+          </WorkZone>
+          <WorkZone kind="human" title="人工补充与确认" subtitle="交班人可以补充一句话说明，确认后进入审计和下一班待办。">
+            <textarea className="focus-ring h-32 w-full rounded-md border border-teal-200 bg-white px-3 py-2 text-sm" value={manualNote} onChange={(event) => setManualNote(event.target.value)} />
+            <button className="mt-3 rounded-md bg-care px-3 py-2 text-sm font-medium text-white">确认交班</button>
+          </WorkZone>
+        </div>
+      </Panel>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <Panel title="重点老人列表">
+          <div className="space-y-3">
+            {handoverMock.keyResidents.map((item) => (
+              <div key={item.name} className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="font-semibold text-ink">{item.name} · {item.room}</div>
+                <p className="mt-2 text-sm text-slate-600">关注原因：{item.reason}</p>
+                <p className="mt-1 text-sm text-care">下一班：{item.next}</p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="未完成任务与家属事项">
+          <div className="grid gap-3">
+            {handoverMock.unfinished.map((item) => (
+              <div key={item.title} className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="font-semibold text-ink">{item.title}</div>
+                <div className="mt-1 text-sm text-muted">责任人：{item.owner} · 截止：{item.due}</div>
+                <p className="mt-2 text-sm text-slate-600">延误原因：{item.reason}</p>
+              </div>
+            ))}
+            {handoverMock.family.map((item) => (
+              <div key={`${item.elder}-${item.issue}`} className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="font-semibold text-ink">{item.elder} · 家属沟通</div>
+                <p className="mt-2 text-sm text-slate-700">{item.issue}</p>
+                <p className="mt-1 text-sm text-amber-800">下一步：{item.next}</p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function FamilySummaryPage() {
+  return (
+    <Panel title="家属沟通摘要 / 周报">
+      <AiNotice />
+      <div className="mt-5 grid gap-4">
+        {familyWeeklyMock.map((item) => (
+          <div key={item.elder} className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-semibold text-ink">{item.elder}</h3>
+              <Pill className="border-amber-200 bg-amber-50 text-amber-700">{item.status}</Pill>
+            </div>
+            <WorkZone kind="ai" title="家属可理解摘要草稿" subtitle="只使用经过专业确认或可追溯的记录，不展示未经确认的 AI 判断。">
+              <p className="text-sm leading-6 text-slate-700">{item.summary}</p>
+              <div className="mt-3 rounded-md bg-white p-3 text-xs text-muted">证据：{item.evidence}</div>
+            </WorkZone>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className="rounded-md bg-care px-3 py-2 text-sm font-medium text-white">确认可发送</button>
+              <button className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">退回修改</button>
+              <button className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">查看证据链</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
   );
 }
 
@@ -1484,6 +1914,7 @@ function Router() {
     if (path === '/elders') return <ElderList navigate={navigate} />;
     if (path.startsWith('/elder/')) return <ElderDetail elderId={path.split('/')[2]} />;
     if (path === '/record') return <DailyRecordPage />;
+    if (path === '/handover') return <HandoverCenterPage />;
     if (path === '/events') return <EventsPage navigate={navigate} />;
     if (path.startsWith('/event/')) return <EventDetail eventId={path.split('/')[2]} />;
     if (path === '/assessments') return <AssessmentsPage />;
@@ -1491,6 +1922,7 @@ function Router() {
     if (path === '/conflicts') return <ConflictsPage />;
     if (path === '/decisions') return <DecisionManagementPage />;
     if (path === '/plan') return <CarePlanPage />;
+    if (path === '/family') return <FamilySummaryPage />;
     if (path === '/tasks') return <TasksPage />;
     if (path === '/approval') return <ApprovalPage />;
     if (path === '/audit') return <AuditPage />;
