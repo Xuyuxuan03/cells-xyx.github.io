@@ -18,19 +18,19 @@ import type { CareEvent, Elder, Role } from './types';
 import { useEffect, useMemo, useState } from 'react';
 
 const navItems = [
-  { path: '/', label: '运营驾驶舱', icon: Home },
-  { path: '/elders', label: '长者档案', icon: Users },
+  { path: '/', label: '智能管家', icon: Home },
   { path: '/record', label: '现场记录', icon: ClipboardList },
   { path: '/handover', label: '交班中心', icon: GitBranch },
-  { path: '/events', label: '异常事件', icon: HeartPulse },
-  { path: '/assessments', label: '角色协同', icon: Stethoscope },
-  { path: '/dependency', label: '责任链路', icon: GitBranch },
-  { path: '/conflicts', label: '冲突检测', icon: AlertTriangle },
-  { path: '/plan', label: '方案微修订', icon: ClipboardCheck },
-  { path: '/decisions', label: '决策台账', icon: ClipboardCheck },
+  { path: '/elders', label: '长者档案', icon: Users },
+  { path: '/events', label: '事件协同', icon: HeartPulse },
+  { path: '/plan', label: '方案调整', icon: ClipboardCheck },
+  { path: '/tasks', label: '我的任务', icon: Activity },
+  { path: '/approval', label: '待确认', icon: ShieldCheck },
   { path: '/family', label: '家属摘要', icon: FileClock },
-  { path: '/tasks', label: '任务中心', icon: Activity },
-  { path: '/approval', label: '审批证据链', icon: ShieldCheck },
+  { path: '/decisions', label: '决策台账', icon: ClipboardCheck },
+  { path: '/conflicts', label: '冲突检测', icon: AlertTriangle },
+  { path: '/assessments', label: '角色评估', icon: Stethoscope },
+  { path: '/dependency', label: '责任链路', icon: GitBranch },
   { path: '/audit', label: '审计日志', icon: FileClock },
 ];
 
@@ -172,6 +172,63 @@ const cnRoleLabels: Record<Role, string> = {
   socialWorker: '社工',
   assessor: '评估师',
   admin: '管理员',
+};
+
+const simpleRoleGuide: Record<Role, { focus: string; first: string; second: string; third: string }> = {
+  admin: {
+    focus: '看全院风险、未闭环事项和人员负荷。',
+    first: '先处理逾期任务和待确认建议。',
+    second: '再查看重点长者和交班摘要。',
+    third: '最后复盘事件和决策台账。',
+  },
+  nurse: {
+    focus: '把现场记录转成可执行的护理判断。',
+    first: '先看需要护士查看的长者。',
+    second: '补齐体征、饮水、排便和睡眠信息。',
+    third: '把需要医生、药师、康复师处理的事项交出去。',
+  },
+  caregiver: {
+    focus: '快速记录现场情况，不做专业判断。',
+    first: '先完成现场记录。',
+    second: '把异常标记为“需要护士查看”或“加入交班”。',
+    third: '继续执行我的任务并提交反馈。',
+  },
+  doctor: {
+    focus: '确认医疗相关风险和高风险方案调整。',
+    first: '先看待确认建议。',
+    second: '查看护士、药师、康复师提供的证据。',
+    third: '确认后交给执行角色并设置复盘时间。',
+  },
+  rehab: {
+    focus: '处理训练耐受、跌倒风险和强度调整。',
+    first: '先看康复相关任务和冲突。',
+    second: '查看护士体征和医生确认边界。',
+    third: '提交训练调整建议和完成反馈。',
+  },
+  nutritionist: {
+    focus: '处理摄入下降和饮食观察。',
+    first: '先看饮食记录和摄入趋势。',
+    second: '判断是否需要加餐或三日观察。',
+    third: '把可执行方案交给护理团队。',
+  },
+  pharmacist: {
+    focus: '核查用药变化和疑似不良反应。',
+    first: '先看用药相关提醒。',
+    second: '核对近一周用药变化。',
+    third: '把需要确认的问题交给医生。',
+  },
+  socialWorker: {
+    focus: '处理情绪、家属沟通和解释材料。',
+    first: '先看家属沟通提醒。',
+    second: '确认哪些内容可以对家属说明。',
+    third: '把未确认信息退回专业角色。',
+  },
+  assessor: {
+    focus: '复评风险和照护等级变化。',
+    first: '先看已完成任务和事件复盘。',
+    second: '判断是否更新 Cells 画像。',
+    third: '把等级或规则建议提交管理者。',
+  },
 };
 
 const operationsMock = {
@@ -469,13 +526,149 @@ function Layout({ path, navigate, children }: { path: string; navigate: (path: s
 }
 
 function Dashboard({ navigate }: { navigate: (path: string) => void }) {
+  const { elders, events, tasks, conflicts, currentUser } = useApp();
+  const openEvents = events.filter((item) => item.status !== 'closed');
+  const role = currentUser?.role ?? 'caregiver';
+  const guide = simpleRoleGuide[role];
+  const pendingApprovals = microRevisionSuggestions.filter((item) => item.status === '待确认').length;
+  const overdueTasks = operationsMock.openLoops.filter((item) => item.type === '逾期任务').length;
+  const firstActionPath =
+    role === 'caregiver' ? '/record' :
+    role === 'socialWorker' ? '/family' :
+    role === 'doctor' || role === 'pharmacist' || role === 'rehab' ? '/approval' :
+    '/handover';
+  return (
+    <div className="space-y-5">
+      <AiNotice />
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="rounded-lg border border-teal-200 bg-teal-50 p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-care text-sm font-semibold text-white">管家</div>
+              <div>
+                <div className="text-sm text-muted">你好，{cnRoleLabels[role]}。这是你今天的工作导览。</div>
+                <h1 className="mt-1 text-2xl font-semibold text-ink">先处理未闭环，再看重点长者。</h1>
+              </div>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-slate-700">
+              当前有 {operationsMock.focusResidents.length} 位长者需要关注，{operationsMock.openLoops.length} 个事项未闭环，{pendingApprovals} 条 Cells 建议待确认。{guide.focus}
+            </p>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <GuideStep number="1" title={guide.first} path={firstActionPath} navigate={navigate} />
+              <GuideStep number="2" title={guide.second} path="/handover" navigate={navigate} />
+              <GuideStep number="3" title={guide.third} path="/decisions" navigate={navigate} />
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
+            <div className="font-semibold text-ink">今天最重要的三件事</div>
+            <div className="mt-4 space-y-3">
+              {operationsMock.openLoops.slice(0, 3).map((item) => (
+                <button key={`${item.type}-${item.title}`} onClick={() => navigate(item.path)} className="block w-full rounded-md bg-white p-3 text-left hover:ring-1 hover:ring-care">
+                  <div className="flex items-center justify-between gap-2">
+                    <Pill className="border-amber-200 bg-amber-50 text-amber-700">{item.type}</Pill>
+                    <span className="text-xs text-muted">{item.due}</span>
+                  </div>
+                  <div className="mt-2 text-sm font-medium text-ink">{item.title}</div>
+                  <div className="mt-1 text-xs text-muted">责任人：{item.owner}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Metric label="重点长者" value={operationsMock.focusResidents.length} sub="今天需要关注" />
+        <Metric label="未闭环" value={operationsMock.openLoops.length} sub="任务/事件/审批" />
+        <Metric label="待确认" value={pendingApprovals} sub="AI 建议需人工确认" />
+        <Metric label="班组高负荷" value={operationsMock.workload.filter((item) => item.load > 80).length} sub="可能影响服务质量" />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <Panel title="重点长者">
+          <div className="grid gap-3">
+            {operationsMock.focusResidents.map((item) => (
+              <button key={item.elderId} onClick={() => navigate(`/elder/${item.elderId}`)} className="rounded-lg border border-slate-200 bg-white p-4 text-left hover:border-care">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Pill className={item.risk === '中高' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>{item.risk}</Pill>
+                  <span className="font-semibold text-ink">{item.name} · {item.room}</span>
+                  <span className="text-xs text-muted">责任人：{item.owner}</span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{item.reason}</p>
+                <div className="mt-2 text-xs text-care">{item.trend}</div>
+              </button>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="常用入口">
+          <div className="grid gap-3 md:grid-cols-2">
+            <QuickNav title="现场记录" desc="30 秒记录现场情况" path="/record" navigate={navigate} />
+            <QuickNav title="交班中心" desc="看未完成和下一班事项" path="/handover" navigate={navigate} />
+            <QuickNav title="方案调整" desc="查看待确认微修订" path="/plan" navigate={navigate} />
+            <QuickNav title="家属摘要" desc="查看可发送说明草稿" path="/family" navigate={navigate} />
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <Panel title="Cells 建议">
+          <div className="space-y-3">
+            {microRevisionSuggestions.map((item) => (
+              <button key={item.id} onClick={() => navigate('/plan')} className="block w-full rounded-lg border border-blue-100 bg-white p-3 text-left hover:border-blue-300">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-ink">{item.title}</div>
+                  <Pill className="border-amber-200 bg-amber-50 text-amber-700">{item.status}</Pill>
+                </div>
+                <div className="mt-2 text-sm text-slate-600">风险 {item.risk} · 置信度 {item.confidence}% · 审批人：{item.approver}</div>
+              </button>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="交班摘要">
+          <div className="grid gap-3 md:grid-cols-3">
+            <ShiftSummaryBlock title="夜班遗留" items={operationsMock.shiftSummary.night} />
+            <ShiftSummaryBlock title="白班跟进" items={operationsMock.shiftSummary.day} />
+            <ShiftSummaryBlock title="重点观察" items={operationsMock.shiftSummary.watch} />
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+        <Panel title="家属沟通">
+          <div className="space-y-3">
+            {operationsMock.familyAlerts.map((item) => (
+              <button key={`${item.elder}-${item.issue}`} onClick={() => navigate('/family')} className="block w-full rounded-lg border border-slate-200 bg-white p-4 text-left hover:border-care">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-ink">{item.elder} · {item.family}</div>
+                  <Pill className="border-amber-200 bg-amber-50 text-amber-700">{item.status}</Pill>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{item.issue}</p>
+                <div className="mt-1 text-xs text-muted">责任人：{item.owner}</div>
+              </button>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="事件卡片">
+          <div className="space-y-4">
+            {openEvents.map((event) => (
+              <button key={event.id} className="block w-full text-left" onClick={() => navigate(`/event/${event.id}`)}>
+                <EventRow event={event} />
+              </button>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function LegacyDashboard({ navigate }: { navigate: (path: string) => void }) {
   const { elders, events, tasks, conflicts } = useApp();
   const openEvents = events.filter((item) => item.status !== 'closed');
   const pendingApprovals = microRevisionSuggestions.filter((item) => item.status === '待确认').length;
   const overdueTasks = operationsMock.openLoops.filter((item) => item.type === '逾期任务').length;
   return (
     <>
-      <AiNotice />
       <Panel title="今日运营驾驶舱">
         <div className="grid gap-4 md:grid-cols-5">
           <Metric label="重点长者" value={operationsMock.focusResidents.length} sub="今日需持续观察" />
@@ -707,6 +900,26 @@ function ActiveEventWorkspace({ event, navigate }: { event: CareEvent; navigate:
         </div>
       </div>
     </Panel>
+  );
+}
+
+function GuideStep({ number, title, path, navigate }: { number: string; title: string; path: string; navigate: (path: string) => void }) {
+  return (
+    <button onClick={() => navigate(path)} className="rounded-lg border border-teal-200 bg-white p-4 text-left hover:border-care hover:bg-teal-50">
+      <div className="flex items-center gap-3">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-care text-sm font-semibold text-white">{number}</span>
+        <span className="text-sm font-semibold leading-5 text-ink">{title}</span>
+      </div>
+    </button>
+  );
+}
+
+function QuickNav({ title, desc, path, navigate }: { title: string; desc: string; path: string; navigate: (path: string) => void }) {
+  return (
+    <button onClick={() => navigate(path)} className="rounded-lg border border-slate-200 bg-white p-4 text-left hover:border-care hover:bg-teal-50">
+      <div className="font-semibold text-ink">{title}</div>
+      <div className="mt-1 text-sm text-muted">{desc}</div>
+    </button>
   );
 }
 
